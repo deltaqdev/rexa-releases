@@ -5,7 +5,7 @@ workspace for coding agents, and experimental Windows builds. Source lives in a
 separate, currently private repository; this one holds only release artifacts,
 the auto-update manifests and the Windows install script.
 
-## Install
+## Install macOS
 
 ```sh
 curl -fsSL https://rexa.sh/install.sh | sh                 # app + rexa CLI
