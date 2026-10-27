@@ -24,7 +24,7 @@ Windows support is experimental, so expect bugs. Please report what breaks in
 On Windows 10 or 11 (x64), in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/deltaqdev/rexa-releases/main/install.ps1 | iex
+irm https://rexa.sh/install.ps1 | iex
 ```
 
 It installs the newest Windows build for your user and puts `rexa` on your
