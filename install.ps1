@@ -23,6 +23,17 @@ function Write-RexaStage([string]$Message) {
     Write-Host "==> $Message"
 }
 
+# One line redrawn in place; padded so a shorter update covers a longer one.
+function Write-RexaProgress([string]$Message) {
+    Write-Host ("`r    {0,-48}" -f $Message) -NoNewline
+}
+
+function Format-RexaBytes([long]$Done, [long]$Total) {
+    $line = '{0:N1} MB' -f ($Done / 1MB)
+    if ($Total -gt 0) { $line += ' of {0:N1} MB ({1}%)' -f ($Total / 1MB), [math]::Floor(100 * $Done / $Total) }
+    $line
+}
+
 function Invoke-RexaApi([string]$Uri) {
     $headers = @{ Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
     if ($env:GITHUB_TOKEN) { $headers.Authorization = "Bearer $env:GITHUB_TOKEN" }
@@ -139,13 +150,46 @@ function Assert-RexaNotRunning {
         '& ([scriptblock]::Create((irm https://raw.githubusercontent.com/deltaqdev/rexa-releases/main/install.ps1))) -Force')
 }
 
+# Streams to disk itself: Invoke-WebRequest's own progress bar slows it several
+# times over in Windows PowerShell, and without it the download is silent.
+function Save-RexaDownload([string]$Url, [string]$File, [long]$Size) {
+    $response = [System.Net.WebRequest]::Create($Url).GetResponse()
+    try {
+        $total = $response.ContentLength
+        if ($total -le 0) { $total = $Size }
+        $source = $response.GetResponseStream()
+        $target = [IO.File]::Create($File)
+        try {
+            $buffer = New-Object byte[] 262144
+            $done = 0L
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            $shown = -1000
+            while (($read = $source.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $target.Write($buffer, 0, $read)
+                $done += $read
+                if ($clock.ElapsedMilliseconds - $shown -lt 250) { continue }
+                $shown = $clock.ElapsedMilliseconds
+                Write-RexaProgress (Format-RexaBytes $done $total)
+            }
+            Write-RexaProgress (Format-RexaBytes $done $total)
+            Write-Host ''
+        } finally {
+            $target.Dispose()
+            $source.Dispose()
+        }
+    } finally {
+        $response.Dispose()
+    }
+}
+
 function Save-RexaInstaller($Package, [string]$Directory) {
     if ($Package.File) { return $Package.File }
     $file = Join-Path $Directory $Package.Name
     Write-RexaStage ("Downloading {0} ({1:N0} MB)..." -f $Package.Name, ($Package.Size / 1MB))
     try {
-        Invoke-WebRequest -Uri $Package.Url -OutFile $file -UseBasicParsing
+        Save-RexaDownload $Package.Url $file $Package.Size
     } catch {
+        Write-Host ''
         throw "Could not download $($Package.Url): $($_.Exception.Message)"
     }
     Write-RexaStage 'Verifying SHA-256...'
@@ -162,7 +206,16 @@ function Invoke-RexaInstaller([string]$File, $Package, $Installed) {
     else { Write-RexaStage "Updating Rexa $($Installed.Version) to $($Package.Version)..." }
     # Again: Rexa may have started during the download.
     Assert-RexaNotRunning
-    $process = Start-Process -FilePath $File -ArgumentList '/S' -Wait -PassThru
+    $process = Start-Process -FilePath $File -ArgumentList '/S' -PassThru
+    # Holding the handle keeps ExitCode readable after exit in Windows PowerShell.
+    $null = $process.Handle
+    $clock = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $process.WaitForExit(1000)) {
+        Write-RexaProgress ('Installer running, {0}s...' -f [int]$clock.Elapsed.TotalSeconds)
+    }
+    $process.WaitForExit()
+    Write-RexaProgress ('Installer finished in {0}s' -f [int]$clock.Elapsed.TotalSeconds)
+    Write-Host ''
     if ($process.ExitCode -ne 0) { throw "The installer exited with code $($process.ExitCode)." }
 }
 
@@ -190,7 +243,7 @@ function Update-RexaSessionPath([string]$Bin) {
 
 function Install-Rexa {
     $ErrorActionPreference = 'Stop'
-    # Windows PowerShell's progress bar slows Invoke-WebRequest several times over.
+    # Windows PowerShell's progress bar slows its web cmdlets several times over.
     $ProgressPreference = 'SilentlyContinue'
     if ($RexaPath) { $package = Get-RexaLocalPackage } else { $package = Get-RexaReleasePackage }
     $before = Get-RexaInstall
