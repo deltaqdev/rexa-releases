@@ -1,10 +1,5 @@
 # Rexa releases
 
-Signed, notarized macOS builds of [Rexa](https://rexa.sh), the native desktop
-workspace for coding agents, and experimental Windows builds. Source lives in a
-separate, currently private repository; this one holds only release artifacts,
-the auto-update manifests and the Windows install script.
-
 ## Install macOS
 
 ```sh
@@ -12,6 +7,4 @@ curl -fsSL https://rexa.sh/install.sh | sh                 # app + rexa CLI
 curl -fsSL https://rexa.sh/install.sh | sh -s -- --cli-only
 ```
 
-Or download a `.dmg` from [rexa.sh/releases](https://rexa.sh/releases) and
-drag `Rexa.app` to `/Applications`. The app updates itself from the stable
-channel.
+Or download a `.dmg` from [rexa.sh/releases](https://rexa.sh/releases)
